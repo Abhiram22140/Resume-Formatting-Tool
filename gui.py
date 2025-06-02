@@ -7,18 +7,16 @@ from tkinter import filedialog, messagebox
 from parser import parse_resume
 from ppt_merger import merge_into_template
 
-# Path to the PPT template you uploaded as Resume.pptx
+# Path to the PPT template
 TEMPLATE_PATH = os.path.join("templates", "Resume.pptx")
 OUTPUT_DIR    = "output"
 
 def on_select_and_format():
     """
-    Invoked when the user clicks “Select & Format Résumé”.
-    1) Let them pick a résumé file (.docx or .pdf)
-    2) Parse it → dict
-    3) Merge into the PPT template
-    4) Save the result in output/
-    5) Show success or error dialog
+    1) Let user pick a résumé file (.docx or .pdf)
+    2) parse_resume(filepath)
+    3) merge_into_template(parsed, TEMPLATE_PATH, output_path)
+    4) show success or error
     """
     # 1) File dialog
     filepath = filedialog.askopenfilename(
@@ -49,16 +47,13 @@ def on_select_and_format():
         messagebox.showerror("Merge Error", f"Failed to generate formatted PPT:\n{e}")
         return
 
-    # 5) Success message
+    # 5) Success
     messagebox.showinfo("Success", f"Formatted PPT saved to:\n{output_path}")
 
 def build_gui():
-    """
-    Build and run the Tkinter window.
-    """
     root = tk.Tk()
     root.title("Résumé → PPT Formatter")
-    root.geometry("380x150")
+    root.geometry("400x160")
     root.resizable(False, False)
 
     tk.Label(
@@ -71,7 +66,7 @@ def build_gui():
         root,
         text="Select & Format Résumé",
         command=on_select_and_format,
-        width=24,
+        width=26,
         height=2
     ).pack()
 
