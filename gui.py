@@ -50,6 +50,41 @@ def on_select_and_format():
     # 5) Success
     messagebox.showinfo("Success", f"Formatted PPT saved to:\n{output_path}")
 
+def ask_for_details(parsed_data):
+    """Opens a new window to ask for user's Name and Role."""
+    details_window = tk.Toplevel()
+    details_window.title("Enter Details")
+    details_window.geometry("300x150")
+    details_window.transient(tk.Tk()) # Keep window on top of the main window
+    details_window.grab_set() # Modal window
+
+    tk.Label(details_window, text="Enter your Name:").pack(pady=5)
+    name_entry = tk.Entry(details_window, width=40)
+    name_entry.pack()
+    if 'name' in parsed_data and parsed_data['name']:
+        name_entry.insert(0, parsed_data['name'])
+
+    tk.Label(details_window, text="Enter your Role:").pack(pady=5)
+    role_entry = tk.Entry(details_window, width=40)
+    role_entry.pack()
+    if 'role' in parsed_data and parsed_data['role']:
+        role_entry.insert(0, parsed_data['role'])
+
+    def submit_details():
+        name = name_entry.get().strip()
+        role = role_entry.get().strip()
+        if name:
+            parsed_data['name'] = name
+        if role:
+            parsed_data['role'] = role
+        details_window.destroy()
+
+    tk.Button(details_window, text="Submit", command=submit_details).pack(pady=10)
+
+    # Wait until the details window is closed
+    details_window.wait_window()
+
+
 def build_gui():
     root = tk.Tk()
     root.title("Résumé → PPT Formatter")

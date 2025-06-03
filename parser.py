@@ -63,9 +63,10 @@ def _parse_contact_info(lines: list[str]) -> tuple[str, str, str]:
             m = phone_regex.search(line)
             if m:
                 phone = m.group(0).strip()
-        # For address: pick a line that has a comma and at least one digit or a known pattern
+        # For address: pick a line that has a comma and at least one digit (street address)
+        # or a line with at least two commas (City, State, Country)
         if not address:
-            if "," in line and re.search(r"\d", line):
+            if ("," in line and re.search(r"\d", line)) or (line.count(",") >= 2):
                 address = line.strip()
 
         if email and phone and address:
@@ -76,17 +77,38 @@ def _parse_contact_info(lines: list[str]) -> tuple[str, str, str]:
 
 def _parse_name_role(lines: list[str]) -> tuple[str, str]:
     """
-    Assume the very first non-empty line is “Name – Role” (or “Name – Role” with dash).
-    If no dash is found, take the entire line as Name and leave Role blank.
+    Attempt to parse Name and Role from the first one or two lines.
+    Prioritize "Name – Role" or "Name - Role" on the first line.
+    If not found, assume the first line is Name and check the second line for a potential Role.
     """
-    first = lines[0] if lines else ""
+    name = ""
+    role = ""
+
+    if not lines:
+        return "", ""
+
+    first = lines[0].strip()
     if "–" in first:
         parts = first.split("–", 1)
-        return parts[0].strip(), parts[1].strip()
-    if "-" in first:
+        name = parts[0].strip()
+        role = parts[1].strip()
+    elif "-" in first:
         parts = first.split("-", 1)
-        return parts[0].strip(), parts[1].strip()
-    return first.strip(), ""
+        name = parts[0].strip()
+        role = parts[1].strip()
+    else:
+        # Assume first line is Name, check second line for Role
+        name = first
+        if len(lines) > 1:
+            second = lines[1].strip()
+            # Check if the second line looks like a role (not empty, not contact info, not a section heading)
+            if second and \
+               "@" not in second and \
+               not re.search(r"\d", second) and \
+               second.lower() not in ["skills", "summary", "education", "experience"]:
+                role = second
+
+    return name, role
 
 
 def _extract_section_text(lines: list[str], heading: str, next_headings: list[str]) -> list[str]:
@@ -154,6 +176,10 @@ def parse_resume(filepath: str) -> dict:
     edu_lines = _extract_section_text(lines, "Education", ["Summary", "Skills", "Experience"])
     education = []
     for entry in edu_lines:
+        entry = entry.strip()
+        if not entry:
+            continue # Skip empty lines
+
         # Try to parse "Degree, Institution (Year–Year)"
         m = re.match(r"^(.*?),\s*(.*?)\s*\((.*?)\)$", entry)
         if m:
@@ -168,39 +194,82 @@ def parse_resume(filepath: str) -> dict:
                 "end":         end
             })
         else:
-            # fallback: treat whole line as degree/institution
-            education.append({
-                "degree": entry.strip(),
-                "institution": "",
-                "start": "",
-                "end": ""
-            })
+            # Fallback: try splitting by the last comma for "Degree, Institution" format
+            if "," in entry:
+                parts = entry.rsplit(",", 1)
+                degree = parts[0].strip()
+                institution = parts[1].strip()
+                education.append({
+                    "degree": degree,
+                    "institution": institution,
+                    "start": "",
+                    "end": ""
+                })
+            else:
+                # Final fallback: treat whole line as degree
+                education.append({
+                    "degree": entry,
+                    "institution": "",
+                    "start": "",
+                    "end": ""
+                })
 
     # 6) Experience – collect lines, then break into entries by detecting header lines
     exp_lines = _extract_section_text(lines, "Experience", ["Summary", "Skills", "Education"])
     experience = []
     current = {"position": "", "company": "", "dates": "", "description": ""}
     for line in exp_lines:
-        # If line looks like "Title, Company (Year–Year)" → new entry
-        if re.match(r".+\(.*–.*\)$", line):
+        line = line.strip()
+        if not line:
+            continue # Skip empty lines
+
+        # Entry detection: line ends with (Dates) or contains a comma followed by a 4-digit year
+        is_entry = re.search(r"\(.*?\)$", line) or re.search(r",\s*\d{4}", line)
+
+        if is_entry:
             # Save previous if nonempty
             if current["position"]:
                 experience.append(current)
                 current = {"position": "", "company": "", "dates": "", "description": ""}
-            # Parse position, company, dates
+
+            # Try to parse "Title, Company (Dates)"
             m2 = re.match(r"^(.*?),\s*(.*?)\s*\((.*?)\)$", line)
             if m2:
                 current["position"] = m2.group(1).strip()
                 current["company"]  = m2.group(2).strip()
                 current["dates"]    = m2.group(3).strip()
             else:
-                current["position"] = line.strip()
+                 # Fallback parsing for entry line
+                 dates = ""
+                 line_before_dates = line
+
+                 # Try to extract dates in parentheses
+                 date_match = re.search(r"\((.*?)\)$", line)
+                 if date_match:
+                     dates = date_match.group(1).strip()
+                     line_before_dates = line[:date_match.start()].strip()
+
+                 current["dates"] = dates
+
+                 # Try to split the part before dates into position and company
+                 if "," in line_before_dates:
+                     parts = line_before_dates.rsplit(",", 1)
+                     current["position"] = parts[0].strip()
+                     current["company"] = parts[1].strip()
+                 elif " at " in line_before_dates.lower():
+                      parts = re.split(r"\s+at\s+", line_before_dates, 1, re.IGNORECASE)
+                      current["position"] = parts[0].strip()
+                      current["company"] = parts[1].strip()
+                 else:
+                     current["position"] = line_before_dates # Fallback: whole line before dates is position
+
         else:
             # Treat as part of description
             if current["description"]:
-                current["description"] += "\n" + ("• " + line.lstrip("• "))
+                current["description"] += "\n" + line # Removed automatic bullet point
             else:
-                current["description"] = "• " + line.lstrip("• ")
+                current["description"] = line # Removed automatic bullet point
+
 
     # Append last one
     if current["position"]:
